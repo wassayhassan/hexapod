@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Hexapod Control</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=JetBrains+Mono:wght@400;700&display=swap');
+
+  :root {
+    --bg: #0a0e14;
+    --panel: #121821;
+    --grid-line: rgba(54, 211, 153, 0.06);
+    --accent: #36d399;
+    --accent-dim: #1a6b4f;
+    --amber: #f0a020;
+    --red: #ef4060;
+    --text: #c8d4e0;
+    --text-dim: #5a6b7d;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    font-family: 'Chakra Petch', sans-serif;
+    color: var(--text);
+    user-select: none;
+    touch-action: none;
+  }
+
+  body {
+    background-image:
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+    background-size: 28px 28px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    padding: 18px 22px 14px;
+    border-bottom: 1px solid rgba(54, 211, 153, 0.12);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .title {
+    font-weight: 700;
+    font-size: 19px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+  .title span { color: var(--accent); }
+  .subtitle {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 1px;
+    margin-top: 2px;
+  }
+
+  .status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 1px;
+  }
+  .dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--red);
+    box-shadow: 0 0 8px var(--red);
+    transition: all .3s;
+  }
+  .dot.on { background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+
+  main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 26px;
+    padding: 20px;
+  }
+
+  /* ---- Joystick ---- */
+  .stick-wrap {
+    position: relative;
+    width: min(70vw, 300px);
+    height: min(70vw, 300px);
+  }
+  .stick-base {
+    position: absolute; inset: 0;
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 50%, #18222e 0%, #0d131b 70%);
+    border: 2px solid rgba(54, 211, 153, 0.18);
+    box-shadow: inset 0 0 40px rgba(0,0,0,0.6), 0 0 30px rgba(54,211,153,0.05);
+  }
+  .ring {
+    position: absolute; border-radius: 50%;
+    border: 1px dashed rgba(54, 211, 153, 0.14);
+  }
+  .ring.outer { inset: 14%; }
+  .ring.inner { inset: 32%; }
+  .crosshair {
+    position: absolute; background: rgba(54, 211, 153, 0.10);
+  }
+  .crosshair.h { left: 8%; right: 8%; top: 50%; height: 1px; transform: translateY(-50%); }
+  .crosshair.v { top: 8%; bottom: 8%; left: 50%; width: 1px; transform: translateX(-50%); }
+
+  .dir-label {
+    position: absolute;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; font-weight: 700;
+    color: var(--text-dim);
+    letter-spacing: 1px;
+  }
+  .dir-label.n { top: 6px; left: 50%; transform: translateX(-50%); }
+  .dir-label.s { bottom: 6px; left: 50%; transform: translateX(-50%); }
+  .dir-label.e { right: 8px; top: 50%; transform: translateY(-50%); }
+  .dir-label.w { left: 8px; top: 50%; transform: translateY(-50%); }
+
+  .knob {
+    position: absolute;
+    width: 34%; height: 34%;
+    left: 33%; top: 33%;
+    border-radius: 50%;
+    background: radial-gradient(circle at 38% 32%, #4dffb0 0%, var(--accent) 45%, var(--accent-dim) 100%);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.5), 0 0 24px rgba(54,211,153,0.4), inset 0 2px 6px rgba(255,255,255,0.25);
+    transition: transform .08s ease-out;
+    display: flex; align-items: center; justify-content: center;
+    z-index: 2;
+  }
+  .knob::after {
+    content: ''; width: 38%; height: 38%; border-radius: 50%;
+    background: rgba(10,14,20,0.35);
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.4);
+  }
+
+  /* ---- Command readout ---- */
+  .readout {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+  }
+  .cmd {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 46px; font-weight: 700;
+    color: var(--accent);
+    letter-spacing: 4px;
+    min-height: 56px;
+    line-height: 1;
+    text-shadow: 0 0 20px rgba(54,211,153,0.4);
+    transition: color .15s;
+  }
+  .cmd.stop { color: var(--amber); text-shadow: 0 0 20px rgba(240,160,32,0.35); }
+  .cmd-name {
+    font-size: 12px; letter-spacing: 3px; text-transform: uppercase;
+    color: var(--text-dim);
+  }
+
+  /* ---- Connect button ---- */
+  .connect-btn {
+    font-family: 'Chakra Petch', sans-serif;
+    font-weight: 700; font-size: 15px;
+    letter-spacing: 2px; text-transform: uppercase;
+    padding: 16px 40px;
+    background: transparent;
+    color: var(--accent);
+    border: 2px solid var(--accent);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all .2s;
+    position: relative;
+    overflow: hidden;
+  }
+  .connect-btn:active { transform: scale(0.97); }
+  .connect-btn.connected {
+    color: var(--red); border-color: var(--red);
+  }
+  .connect-btn:disabled { opacity: .4; cursor: default; }
+
+  /* ---- Log ---- */
+  .log {
+    width: 100%;
+    max-width: 460px;
+    height: 96px;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid rgba(54,211,153,0.12);
+    border-radius: 4px;
+    padding: 10px 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    line-height: 1.6;
+    overflow-y: auto;
+    color: var(--text-dim);
+  }
+  .log .tx { color: var(--accent); }
+  .log .rx { color: var(--amber); }
+  .log .err { color: var(--red); }
+
+  footer { padding: 14px 20px 22px; }
+</style>
+</head>
+<body>
+  <header>
+    <div>
+      <div class="title">HEX<span>·</span>CTRL</div>
+      <div class="subtitle">BLE · NORDIC UART</div>
+    </div>
+    <div class="status">
+      <span class="dot" id="dot"></span>
+      <span id="statusTxt">OFFLINE</span>
+    </div>
+  </header>
+
+  <main>
+    <div class="readout">
+      <div class="cmd stop" id="cmd">S</div>
+      <div class="cmd-name" id="cmdName">STOPPED</div>
+    </div>
+
+    <div class="stick-wrap">
+      <div class="stick-base"></div>
+      <div class="ring outer"></div>
+      <div class="ring inner"></div>
+      <div class="crosshair h"></div>
+      <div class="crosshair v"></div>
+      <div class="dir-label n">FWD</div>
+      <div class="dir-label s">REV</div>
+      <div class="dir-label e">R</div>
+      <div class="dir-label w">L</div>
+      <div class="knob" id="knob"></div>
+    </div>
+
+    <div class="log" id="log"></div>
+  </main>
+
+  <footer>
+    <button class="connect-btn" id="connectBtn">Connect</button>
+  </footer>
+
+<script>
+  // ---- Nordic UART Service UUIDs (must match the ESP32 sketch) ----
+  const SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+  const RX_UUID      = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // write -> ESP32
+  const TX_UUID      = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // notify <- ESP32
+
+  let device = null, rxChar = null, txChar = null;
+  let lastCmd = 'S';
+
+  const knob       = document.getElementById('knob');
+  const wrap       = document.querySelector('.stick-wrap');
+  const cmdEl      = document.getElementById('cmd');
+  const cmdNameEl  = document.getElementById('cmdName');
+  const dot        = document.getElementById('dot');
+  const statusTxt  = document.getElementById('statusTxt');
+  const connectBtn = document.getElementById('connectBtn');
+  const logEl      = document.getElementById('log');
+
+  const NAMES = {
+    F:'Forward', B:'Reverse', L:'Left', R:'Right',
+    G:'Fwd-Left', H:'Fwd-Right', J:'Rev-Left', K:'Rev-Right',
+    S:'Stopped'
+  };
+
+  function log(msg, cls='') {
+    const t = new Date().toLocaleTimeString('en-US', {hour12:false});
+    logEl.innerHTML += `<div class="${cls}">[${t}] ${msg}</div>`;
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  // Map joystick angle + magnitude to one of 8 directions (or S in deadzone)
+  function vectorToCommand(dx, dy) {
+    const mag = Math.hypot(dx, dy);
+    if (mag < 0.35) return 'S';            // deadzone -> stop
+    let ang = Math.atan2(-dy, dx) * 180 / Math.PI; // 0=E, 90=N
+    if (ang < 0) ang += 360;
+    // 8 sectors, 45 deg each, centered on cardinal/diagonal
+    const sectors = [
+      {c:'R', a:0},   {c:'H', a:45},  {c:'F', a:90},  {c:'G', a:135},
+      {c:'L', a:180}, {c:'J', a:225}, {c:'B', a:270}, {c:'K', a:315}
+    ];
+    let best = 'S', bestD = 999;
+    for (const s of sectors) {
+      let d = Math.abs(ang - s.a);
+      if (d > 180) d = 360 - d;
+      if (d < bestD) { bestD = d; best = s.c; }
+    }
+    return best;
+  }
+
+  function setCommandDisplay(cmd) {
+    cmdEl.textContent = cmd;
+    cmdNameEl.textContent = (NAMES[cmd] || cmd).toUpperCase();
+    cmdEl.classList.toggle('stop', cmd === 'S');
+  }
+
+  // Send only when direction changes
+  async function maybeSend(cmd) {
+    if (cmd === lastCmd) return;
+    lastCmd = cmd;
+    setCommandDisplay(cmd);
+    if (!rxChar) return;
+    try {
+      await rxChar.writeValue(new TextEncoder().encode(cmd + '\n'));
+      log('TX → ' + cmd, 'tx');
+    } catch (e) {
+      log('TX failed: ' + e.message, 'err');
+    }
+  }
+
+  // ---- Joystick drag handling ----
+  let dragging = false;
+  let radius = 0, cx = 0, cy = 0;
+
+  function startDrag(e) {
+    const r = wrap.getBoundingClientRect();
+    cx = r.left + r.width/2;
+    cy = r.top + r.height/2;
+    radius = r.width/2 * 0.62;        // travel limit for knob center
+    dragging = true;
+    knob.style.transition = 'none';
+    moveDrag(e);
+  }
+
+  function moveDrag(e) {
+    if (!dragging) return;
+    const p = e.touches ? e.touches[0] : e;
+    let dx = p.clientX - cx;
+    let dy = p.clientY - cy;
+    const dist = Math.hypot(dx, dy);
+    if (dist > radius) { dx = dx/dist*radius; dy = dy/dist*radius; }
+    knob.style.transform = `translate(${dx}px, ${dy}px)`;
+    // normalize to -1..1 for command mapping
+    maybeSend(vectorToCommand(dx/radius, dy/radius));
+  }
+
+  function endDrag() {
+    if (!dragging) return;
+    dragging = false;
+    knob.style.transition = 'transform .18s ease-out';
+    knob.style.transform = 'translate(0px, 0px)';
+    maybeSend('S');                   // auto-stop on release
+  }
+
+  wrap.addEventListener('mousedown', startDrag);
+  window.addEventListener('mousemove', moveDrag);
+  window.addEventListener('mouseup', endDrag);
+  wrap.addEventListener('touchstart', startDrag, {passive:false});
+  window.addEventListener('touchmove', (e)=>{ if(dragging) e.preventDefault(); moveDrag(e); }, {passive:false});
+  window.addEventListener('touchend', endDrag);
+
+  // ---- BLE connect / disconnect ----
+  async function connect() {
+    if (!navigator.bluetooth) {
+      log('Web Bluetooth not supported in this browser.', 'err');
+      alert('Web Bluetooth is not available. Use Chrome/Edge on desktop or Android (iOS needs Bluefy).');
+      return;
+    }
+    try {
+      log('Scanning…');
+      device = await navigator.bluetooth.requestDevice({
+        filters: [{ services: [SERVICE_UUID] }],
+        optionalServices: [SERVICE_UUID]
+      });
+      device.addEventListener('gattserverdisconnected', onDisconnected);
+      log('Connecting to ' + (device.name || 'device') + '…');
+      const server = await device.gatt.connect();
+      const svc = await server.getPrimaryService(SERVICE_UUID);
+      rxChar = await svc.getCharacteristic(RX_UUID);
+      txChar = await svc.getCharacteristic(TX_UUID);
+      await txChar.startNotifications();
+      txChar.addEventListener('characteristicvaluechanged', (ev) => {
+        const txt = new TextDecoder().decode(ev.target.value).trim();
+        if (txt) log('RX ← ' + txt, 'rx');
+      });
+      setConnected(true);
+      log('Connected.', 'tx');
+    } catch (e) {
+      log('Connect failed: ' + e.message, 'err');
+    }
+  }
+
+  function disconnect() {
+    if (device && device.gatt.connected) device.gatt.disconnect();
+  }
+
+  function onDisconnected() {
+    setConnected(false);
+    rxChar = txChar = null;
+    log('Disconnected.', 'err');
+  }
+
+  function setConnected(on) {
+    dot.classList.toggle('on', on);
+    statusTxt.textContent = on ? 'ONLINE' : 'OFFLINE';
+    connectBtn.textContent = on ? 'Disconnect' : 'Connect';
+    connectBtn.classList.toggle('connected', on);
+  }
+
+  connectBtn.addEventListener('click', () => {
+    if (device && device.gatt.connected) disconnect();
+    else connect();
+  });
+
+  setCommandDisplay('S');
+  log('Ready. Tap Connect to pair with Hexapod-ESP32.');
+</script>
+</body>
+</html>
